@@ -1,8 +1,9 @@
-##Overview
+## Overview
 Folding-Docking-Affinity (FDA) is a framework which folds proteins, determines protein-ligand binding conformations, and predicts binding affinities from computed three-dimensional protein-ligand binding structures.
 <p align="center">
     <img src="figure/FDA_fig1.pdf">
-##Dependencies
+    
+## Dependencies
 The Folding part was tested with Python 3.10.13 and CUDA 12.3 on Ubuntu 20.04, with access to Nvidia Tesla V100 (32GB RAM), Intel(R) Xeon(R) Platinum 8168 CPU @ 2.70GHz, and 1.5TB RAM. Please follow [localcolabfold](https://github.com/YoshitakaMo/localcolabfold) to install the working environment. 
 
 The Docking and Affinity parts were tested with Python 3.9.18 and CUDA 11.5 on CentOS Linux 7 (Core), with access to Nvidia A100 (80GB RAM), AMD EPYC 7352 24-Core Processor, and 1TB RAM. Run the following to create two conda environments (diffdock, pymol).
@@ -11,16 +12,16 @@ The Docking and Affinity parts were tested with Python 3.9.18 and CUDA 11.5 on C
 conda env create -f environment_diffdock.yml # create an environment, diffdock
 conda env create -f environment_pymol.yml # create an environment, pymol
 ```
-##Datasets
-Download the processed data from and decompress the files
+## Datasets
+Download the processed data for benchmark and ablation study from [zenodo](https://zenodo.org/records/10968593) and decompress the files
 
 ```
 tar -xvzf benchmark.tar.gz
 tar -xvzf ablation_study.tar.gz
 ```
 
-and place them in `/data` directory.
-###File structure
+Place them in `/data` directory and follow the following file structure.
+### File structure
 
 ```
 |--data
@@ -39,9 +40,9 @@ and place them in `/data` directory.
 ```
 
  
-##Replicate results
-###Affinity prediction benchmark
-####Folding 
+## Replicate results
+### Affinity prediction benchmark
+#### Folding 
 Use ColabFold to generate three-dimensional protein structures. Please follow [localcolabfold](https://github.com/YoshitakaMo/localcolabfold) to install the working environment. Or directly download the processed data from and place them in `/data` directory and jump to the last step.
 
 ```python
@@ -49,14 +50,14 @@ python folding/create_davis_protein_input.py
 colabfold_batch --templates --amber folding/input/davis_protein.csv folding/output/davis_colabfold_protein --use-gpu-relax --num-relax 1 --gpu 10
 
 ```
-####Docking
+#### Docking
 Create protein-ligand complex directories
 
 ```
 conda activate diffdock
 python docking/create_dir.py
 ```
-Implement DiffDock to generate ligand binding poses
+Implement DiffDock to generate ligand binding poses. Download ESM embedding from [zenodo](https://zenodo.org/records/10968593/files/esm2_3billion_embeddings_davis_colabfold.pt.tar.gz?download=1) and place the file in `docking/DiffDock/data/`.
 
 ```
 cd docking/DiffDock
@@ -70,7 +71,7 @@ cd ../../
 python docking/update_dir.py
 ```
 
-####Affinity
+#### Affinity
 Pre-process protein-ligand complexes and generate inputs for GIGN.
 
 ```
