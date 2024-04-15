@@ -1,6 +1,7 @@
-data/benchmark
-data/ablation_study
+data/benchmark/*
+data/ablation_study/*
 *.pt
 *.tar.gz
 *.npy
+*.pkl
 

@@ -1,7 +1,7 @@
 ## Overview
 Folding-Docking-Affinity (FDA) is a framework which folds proteins, determines protein-ligand binding conformations, and predicts binding affinities from computed three-dimensional protein-ligand binding structures.
 <p align="center">
-    <img src="figure/FDA_fig1.pdf">
+    <embed src="figure/FDA_fig1.pdf">
     
 ## Dependencies
 The Folding part was tested with Python 3.10.13 and CUDA 12.3 on Ubuntu 20.04, with access to Nvidia Tesla V100 (32GB RAM), Intel(R) Xeon(R) Platinum 8168 CPU @ 2.70GHz, and 1.5TB RAM. Please follow [localcolabfold](https://github.com/YoshitakaMo/localcolabfold) to install the working environment. 
@@ -13,14 +13,14 @@ conda env create -f environment_diffdock.yml # create an environment, diffdock
 conda env create -f environment_pymol.yml # create an environment, pymol
 ```
 ## Datasets
-Download the processed data for benchmark and ablation study from [zenodo](https://zenodo.org/records/10968593) and decompress the files
+Download the processed data for replicating benchmark and ablation study results from [zenodo](https://zenodo.org/records/10968593) and decompress the files
 
 ```
 tar -xvzf benchmark.tar.gz
 tar -xvzf ablation_study.tar.gz
 ```
 
-Place them in `/data` directory and follow the following file structure.
+Create a directory `/data`, place them in the directory and follow the following file structure.
 ### File structure
 
 ```
@@ -43,7 +43,7 @@ Place them in `/data` directory and follow the following file structure.
 ## Replicate results
 ### Affinity prediction benchmark
 #### Folding 
-Use ColabFold to generate three-dimensional protein structures. Please follow [localcolabfold](https://github.com/YoshitakaMo/localcolabfold) to install the working environment. Or directly download the processed data from and place them in `/data` directory and jump to the last step.
+Use ColabFold to generate three-dimensional protein structures. Please follow [localcolabfold](https://github.com/YoshitakaMo/localcolabfold) to install the working environment. Or directly download the processed data from [zenodo](https://zenodo.org/records/10968593/files/benchmark.tar.gz?download=1) and place them in `/data` directory and jump to the last step.
 
 ```python
 python folding/create_davis_protein_input.py
@@ -88,7 +88,7 @@ Train GIGN to predict binding affinity under different split_methods (drug, prot
 python train_GIGN_benchmark.py --split_method drug
 ```
 ### Ablation study
-Download the processed data from and place them in `/data`. Train GIGN to predict binding affinity under three different scenarios (crystal\_crystal, crystal\_diffdock, and colabfold\_diffdock) 
+Download the processed data from [zenodo](https://zenodo.org/records/10968593/files/ablation_study.tar.gz?download=1) and place them in `/data`. Train GIGN to predict binding affinity under three different scenarios (crystal\_crystal, crystal\_diffdock, and colabfold\_diffdock).
 
 ```
 python train_GIGN_ablation.py --scenario crystal_crystal
