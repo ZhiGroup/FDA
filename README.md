@@ -1,7 +1,7 @@
 ## Overview
 Folding-Docking-Affinity (FDA) is a framework which folds proteins, determines protein-ligand binding conformations, and predicts binding affinities from computed three-dimensional protein-ligand binding structures.
 <p align="center">
-    <embed src="figure/FDA_fig1.pdf">
+    <img src="figure/FDA_fig1.jpg">
     
 ## Dependencies
 The Folding part was tested with Python 3.10.13 and CUDA 12.3 on Ubuntu 20.04, with access to Nvidia Tesla V100 (32GB RAM), Intel(R) Xeon(R) Platinum 8168 CPU @ 2.70GHz, and 1.5TB RAM. Please follow [localcolabfold](https://github.com/YoshitakaMo/localcolabfold) to install the working environment. 
