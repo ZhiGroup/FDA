@@ -87,7 +87,7 @@ Train GIGN to predict binding affinity under different split_methods (drug, prot
 ```
 python train_GIGN_benchmark.py --split_method drug
 ```
-###Ablation study
+### Ablation study
 Download the processed data from and place them in `/data`. Train GIGN to predict binding affinity under three different scenarios (crystal\_crystal, crystal\_diffdock, and colabfold\_diffdock) 
 
 ```
