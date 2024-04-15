@@ -1,0 +1,16 @@
+{
+    "train":
+    {
+        "model": "davis_benchmark", 
+        "save_dir" : "./model",
+        "graph_type" : "Graph_GIGN",
+        "repeat" : 5,
+        "fold" : 0,
+        "epochs" : 1000,
+        "batch_size" : 128,
+        "early_stop_epoch" : 100,
+        "save_model": true, 
+        "create" : true,
+        "mark": null
+    }
+}
