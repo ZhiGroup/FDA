@@ -1,4 +1,7 @@
 ## Overview
+<span style="color:red;">Please note that the  repository is for reference purposes only. We do not guarantee its active functionality. A user-friendly version is currently under development.</span>
+
+
 Folding-Docking-Affinity (FDA) is a framework which folds proteins, determines protein-ligand binding conformations, and predicts binding affinities from computed three-dimensional protein-ligand binding structures.
 <p align="center">
     <img src="figure/FDA_fig1.jpg">
@@ -6,11 +9,17 @@ Folding-Docking-Affinity (FDA) is a framework which folds proteins, determines p
 ## Dependencies
 The Folding part was tested with Python 3.10.13 and CUDA 12.3 on Ubuntu 20.04, with access to Nvidia Tesla V100 (32GB RAM), Intel(R) Xeon(R) Platinum 8168 CPU @ 2.70GHz, and 1.5TB RAM. Please follow [localcolabfold](https://github.com/YoshitakaMo/localcolabfold) to install the working environment. 
 
-The Docking and Affinity parts were tested with Python 3.9.18 and CUDA 11.5 on CentOS Linux 7 (Core), with access to Nvidia A100 (80GB RAM), AMD EPYC 7352 24-Core Processor, and 1TB RAM. Run the following to create two conda environments (diffdock, pymol).
+The Docking and Affinity parts were tested with Python 3.9.18 and CUDA 11.5 on CentOS Linux 7 (Core), with access to Nvidia A100 (80GB RAM), AMD EPYC 7352 24-Core Processor, and 1TB RAM. Run the following to create a conda environment, FDA.
 
 ```
-conda env create -f environment_diffdock.yml # create an environment, diffdock
-conda env create -f environment_pymol.yml # create an environment, pymol
+conda create --name FDA python=3.9
+conda activate FDA
+conda install conda-forge::pymol-open-source
+conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
+pip install scipy
+pip install --no-index pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-1.11.0+cu113.html
+pip install torch_geometric
+python -m pip install PyYAML scipy "networkx[default]" biopython rdkit-pypi e3nn spyrmsd pandas biopandas
 ```
 ## Datasets
 Download the processed data for replicating benchmark and ablation study results from [zenodo](https://zenodo.org/records/10968593) and decompress the files
@@ -47,7 +56,7 @@ Use ColabFold to generate three-dimensional protein structures. Please follow [l
 
 ```python
 python folding/create_davis_protein_input.py
-colabfold_batch --templates --amber folding/input/davis_protein.csv folding/output/davis_colabfold_protein --use-gpu-relax --num-relax 1 --gpu 10
+colabfold_batch --templates --amber folding/input/davis_protein.csv folding/output/davis_colabfold_protein --use-gpu-relax --num-relax 1 --gpu 0
 
 ```
 #### Docking
@@ -57,7 +66,7 @@ Create protein-ligand complex directories
 conda activate diffdock
 python docking/create_dir.py
 ```
-Implement DiffDock to generate ligand binding poses. Download ESM embedding from [zenodo](https://zenodo.org/records/10968593/files/esm2_3billion_embeddings_davis_colabfold.pt.tar.gz?download=1) and place the file in `docking/DiffDock/data/`.
+Implement DiffDock to generate ligand binding poses. Download ESM2 embedding from [zenodo](https://zenodo.org/records/10968593/files/esm2_3billion_embeddings_davis_colabfold.pt.tar.gz?download=1) and place the file in `docking/DiffDock/data/`. The process of generating ESM2 embedding could refer [DiffDock](https://github.com/gcorso/DiffDock/tree/v1.0)
 
 ```
 cd docking/DiffDock
@@ -91,5 +100,6 @@ python train_GIGN_benchmark.py --split_method drug
 Download the processed data from [zenodo](https://zenodo.org/records/10968593/files/ablation_study.tar.gz?download=1) and place them in `/data`. Train GIGN to predict binding affinity under three different scenarios (crystal\_crystal, crystal\_diffdock, and colabfold\_diffdock).
 
 ```
+cd affinity/GIGN
 python train_GIGN_ablation.py --scenario crystal_crystal
 ```
