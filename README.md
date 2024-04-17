@@ -1,10 +1,6 @@
 ## Overview
-<!-- <span style="color:red;">Please note that the  repository is for reference purposes only. We do not guarantee its active functionality. A user-friendly version is currently under development.</span> -->
 
-
-```diff
--Please note that the  repository is for reference purposes only. We do not guarantee its active functionality. A user-friendly version is currently under development.
-```
+$\color{red}{\textsf{Please note that the  repository is for reference purposes only. We do not guarantee its active functionality. A user-friendly version is currently under development.}}$
 
 
 Folding-Docking-Affinity (FDA) is a framework which folds proteins, determines protein-ligand binding conformations, and predicts binding affinities from computed three-dimensional protein-ligand binding structures.
