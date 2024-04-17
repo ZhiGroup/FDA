@@ -145,7 +145,6 @@ class GraphDataset(Dataset):
         complex_id_list = []
         pKa_list = []
         graph_path_list = []
-        print(len(data_df))
 
 
         for i, row in data_df.iterrows():
@@ -193,17 +192,4 @@ if __name__ == '__main__':
     train_set = GraphDataset(train_dir, train_df, graph_type='Graph_GIGN', dis_threshold=5, create=True)
     val_set = GraphDataset(val_dir, val_df, graph_type='Graph_GIGN', dis_threshold=5, create=True)
     
-    
-    
-    # train_loader = PLIDataLoader(toy_set, batch_size=2, shuffle=True, num_workers=4)
-    
-    
-    
-    
-    # for data in train_loader:
-    #     print(f'data.x.shape: {data.x.shape}')
-    #     print(data.x)
-    #     print(data.edge_index_intra)
-    #     break
-
 # %%

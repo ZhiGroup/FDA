@@ -24,14 +24,17 @@ pip install torch_geometric
 python -m pip install PyYAML scipy "networkx[default]" biopython rdkit-pypi e3nn spyrmsd pandas biopandas
 ```
 ## Datasets
-Download the processed data for replicating benchmark and ablation study results from [zenodo](https://zenodo.org/records/10968593) and decompress the files
+Create a directory `/data`, and download the processed data for replicating benchmark and ablation study results from [zenodo](https://zenodo.org/records/10968593) and decompress the files
 
 ```
-tar -xvzf benchmark.tar.gz
-tar -xvzf ablation_study.tar.gz
+cd FDA
+mkdir data
+cd data
+wget https://zenodo.org/records/10968593/files/benchmark.tar.gz?download=1
+wget https://zenodo.org/records/10968593/files/ablation_study.tar.gz?download=1
+tar -xvzf benchmark.tar.gz?download=1
+tar -xvzf ablation_study.tar.gz?download=1
 ```
-
-Create a directory `/data`, place them in the directory and follow the following file structure.
 ### File structure
 
 ```
@@ -54,18 +57,16 @@ Create a directory `/data`, place them in the directory and follow the following
 ## Replicate results
 ### Affinity prediction benchmark
 #### Folding 
-Use ColabFold to generate three-dimensional protein structures. Please follow [localcolabfold](https://github.com/YoshitakaMo/localcolabfold) to install the working environment. Or directly download the processed data from [zenodo](https://zenodo.org/records/10968593/files/benchmark.tar.gz?download=1) and place them in `/data` directory and jump to the last step.
+Use ColabFold to generate three-dimensional protein structures. Please follow [localcolabfold](https://github.com/YoshitakaMo/localcolabfold) to install the working environment. Or directly download the processed data from [zenodo](https://zenodo.org/records/10968593/files/benchmark.tar.gz?download=1) and place them in `/data` directory and jump to the [last step](#train-gign-to-predict-binding-affinity-under-different-split_methods-drug-protein-both-and-seqid).
 
 ```python
 python folding/create_davis_protein_input.py
 colabfold_batch --templates --amber folding/input/davis_protein.csv folding/output/davis_colabfold_protein --use-gpu-relax --num-relax 1 --gpu 0
-
 ```
 #### Docking
 Create protein-ligand complex directories
 
 ```
-conda activate diffdock
 python docking/create_dir.py
 ```
 Implement DiffDock to generate ligand binding poses. Download ESM2 embedding from [zenodo](https://zenodo.org/records/10968593/files/esm2_3billion_embeddings_davis_colabfold.pt.tar.gz?download=1) and place the file in `docking/DiffDock/data/`. The process of generating ESM2 embedding could refer [DiffDock](https://github.com/gcorso/DiffDock/tree/v1.0)
@@ -86,22 +87,21 @@ python docking/update_dir.py
 Pre-process protein-ligand complexes and generate inputs for GIGN.
 
 ```
-conda activate pymol
 python affinity/GIGN/preprocessing.py
-conda activate diffdock
 cd affinity/GIGN
 python dataset_GIGN_benchmark.py
 ```
 
-Train GIGN to predict binding affinity under different split_methods (drug, protein, both, and seqid).
+##### Train GIGN to predict binding affinity under different split_methods (drug, protein, both, and seqid).
 
 ```
-python train_GIGN_benchmark.py --split_method drug
+cd affinity/GIGN
+python train_GIGN_benchmark.py --split_method drug --gpu 0
 ```
 ### Ablation study
 Download the processed data from [zenodo](https://zenodo.org/records/10968593/files/ablation_study.tar.gz?download=1) and place them in `/data`. Train GIGN to predict binding affinity under three different scenarios (crystal\_crystal, crystal\_diffdock, and colabfold\_diffdock).
 
 ```
 cd affinity/GIGN
-python train_GIGN_ablation.py --scenario crystal_crystal
+python train_GIGN_ablation.py --scenario crystal_crystal --gpu 0
 ```
