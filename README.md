@@ -27,6 +27,7 @@ python -m pip install PyYAML scipy "networkx[default]" biopython rdkit-pypi e3nn
 Create a directory `/data`, and download the processed data for replicating benchmark and ablation study results from [zenodo](https://zenodo.org/records/10968593) and decompress the files
 
 ```
+git clone git@github.com:ZhiGroup/FDA.git
 cd FDA
 mkdir data
 cd data
@@ -34,6 +35,7 @@ wget https://zenodo.org/records/10968593/files/benchmark.tar.gz?download=1
 wget https://zenodo.org/records/10968593/files/ablation_study.tar.gz?download=1
 tar -xvzf benchmark.tar.gz?download=1
 tar -xvzf ablation_study.tar.gz?download=1
+cd ../
 ```
 ### File structure
 
