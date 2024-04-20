@@ -107,3 +107,5 @@ Download the processed data from [zenodo](https://zenodo.org/records/10968593/fi
 cd affinity/GIGN
 python train_GIGN_ablation.py --scenario crystal_crystal --gpu 0
 ```
+### Citation
+Wu, MH., Xie, Z., & Zhi, D. Protein-ligand binding affinity prediction: Is 3D binding pose needed?. bioRxiv (2024). [https://doi.org/10.1101/2024.04.16.589805](https://doi.org/10.1101/2024.04.16.589805) 
