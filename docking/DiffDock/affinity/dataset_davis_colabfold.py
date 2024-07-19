@@ -15,7 +15,7 @@ import yaml
 from torch_geometric.data import Dataset, Data
 from torch_geometric.loader import DataLoader, DataListLoader
 from tqdm import tqdm
-
+import glob
 
 from datasets.pdbbind_affinity_davis_colabfold import PDBBind
 from utils.diffusion_utils import get_t_schedule
@@ -35,6 +35,22 @@ class ListDataset(Dataset):
 
     def get(self, idx: int) -> Data:
         return self.data_list[idx]
+    
+class ListDataset_graph_split(Dataset):
+    def __init__(self, list, calpha_root_path, allatoms_root_path=None):
+        super().__init__()
+        self.data_list = list
+        self.calpha_root_path = calpha_root_path
+        self.allatoms_root_path = allatoms_root_path
+    def len(self) -> int:
+        return len(self.data_list)
+
+    def get(self, idx: int) -> Data:
+        name = self.data_list[idx]
+        calpha_heterograph_path = os.path.join(self.calpha_root_path, f'{name}.pkl')
+        allatoms_heterograph_path = os.path.join(self.allatoms_root_path, f'{name}.pkl')
+        return pickle.load(open(calpha_heterograph_path, 'rb')), pickle.load(open(allatoms_heterograph_path, 'rb'))
+
 
 def get_cache_path(args, split, all_atoms):
     cache_path = args.cache_path
@@ -43,7 +59,7 @@ def get_cache_path(args, split, all_atoms):
     if all_atoms:
         cache_path += '_allatoms'
     
-    cache_path = os.path.join(cache_path, f'limit{args.limit_complexes}_INDEX_davis_colabfold_{os.path.splitext(os.path.basename(args.split_train))[0]}_maxLigSize{args.max_lig_size}_H{int(not args.remove_hs)}_recRad{args.receptor_radius}_recMax{args.c_alpha_max_neighbors}'
+    cache_path = os.path.join(cache_path, f'limit{args.limit_complexes}_INDEX_{args.protein_dir_name}_{os.path.splitext(os.path.basename(args.split_train))[0]}_maxLigSize{args.max_lig_size}_H{int(not args.remove_hs)}_recRad{args.receptor_radius}_recMax{args.c_alpha_max_neighbors}'
                                        + ('' if not all_atoms else f'_atomRad{args.atom_radius}_atomMax{args.atom_max_neighbors}')
                                        + ('' if args.no_torsion or args.num_conformers == 1 else
                                            f'_confs{args.num_conformers}')
@@ -70,7 +86,7 @@ class AffinityDataset(Dataset):
     def __init__(self, batch_size, cache_path, original_model_dir, confidence_model_dir, confidence_ckpt, split, device, limit_complexes,
                  inference_steps, samples_per_complex, no_random, ode, no_final_step_noise, all_atoms, split_method,
                  args, balance=False, use_original_model_cache=True, rmsd_classification_cutoff=2, no_parallel=True,
-                 cache_ids_to_combine= None, cache_creation_id=None, heterographs_name=None, heterographs_split_size=None, heterographs_combine=None, create_dataset=True):
+                 cache_ids_to_combine= None, cache_creation_id=None, heterographs_name=None, heterographs_split_size=None, heterographs_combine=None):
 
         super(AffinityDataset, self).__init__()
 
@@ -105,15 +121,16 @@ class AffinityDataset(Dataset):
         self.original_model_args = get_model_args(original_model_dir)
         self.complex_graphs_allatom_cache = get_cache_path(args, 'train', all_atoms=True)
         self.complex_graphs_calpha_cache = get_cache_path(args, 'train', all_atoms=False)
-
+        self.graph_split = args.graph_split
     
         # print('Using the cached complex graphs of the original model args' if self.use_original_model_cache else 'Not using the cached complex graphs of the original model args. Instead the complex graphs are used that are at the location given by the dataset parameters given to confidence_train.py')
         # print(self.complex_graphs_cache)
-        
         # the original calpha complex graphs for scoring model
-        if not os.path.exists(os.path.join(self.complex_graphs_calpha_cache, "heterographs.pkl")):
+        if (not os.path.exists(os.path.join(self.complex_graphs_calpha_cache, "heterographs.pkl"))) and \
+           (not glob.glob(os.path.join(self.complex_graphs_calpha_cache, "heterograph*.pkl"))):
             print(f'HAPPENING | Complex graphs path does not exist yet: {os.path.join(self.complex_graphs_calpha_cache, "heterographs.pkl")}. For that reason, we are now creating the dataset.')
-            PDBBind(transform=None, root=args.data_dir, limit_complexes=args.limit_complexes,
+            PDBBind(transform=None, root=args.data_dir, protein_dir_name=args.protein_dir_name, ligand_dir_name=args.ligand_dir_name,
+                    limit_complexes=args.limit_complexes,
                     receptor_radius=args.receptor_radius,
                     cache_path=args.cache_path, split_path=args.split_train,
                     remove_hs=args.remove_hs, max_lig_size=args.max_lig_size,
@@ -125,18 +142,25 @@ class AffinityDataset(Dataset):
                     atom_radius=args.atom_radius,
                     atom_max_neighbors=args.atom_max_neighbors,
                     esm_embeddings_path=args.esm_embeddings_path,
-                    require_ligand=True)
+                    require_ligand=True,
+                    graph_split=args.graph_split)
             
         print(f'HAPPENING | Loading calpha complex graphs from: {os.path.join(self.complex_graphs_calpha_cache, "heterographs.pkl")}')
-        if create_dataset:
+        
+
+        if self.graph_split:
+            self.dataset_names_calpha = [os.path.splitext(name)[0] for name in os.listdir(self.complex_graphs_calpha_cache) if name.startswith('heterograph_')]
+        else:
             with open(os.path.join(self.complex_graphs_calpha_cache, "heterographs.pkl"), 'rb') as f:
                 self.complex_graphs_calpha = pickle.load(f)
             self.complex_graph_calpha_dict = {d.name: d for d in self.complex_graphs_calpha}
         
         # the original allatom complex graphs for confidence model
-        if not os.path.exists(os.path.join(self.complex_graphs_allatom_cache, "heterographs.pkl")):
+        if (not os.path.exists(os.path.join(self.complex_graphs_allatom_cache, "heterographs.pkl"))) and \
+           (not glob.glob(os.path.join(self.complex_graphs_allatom_cache, "heterograph*.pkl"))):
             print(f'HAPPENING | Complex graphs path does not exist yet: {os.path.join(self.complex_graphs_allatom_cache, "heterographs.pkl")}. For that reason, we are now creating the dataset.')
-            PDBBind(transform=None, root=args.data_dir, limit_complexes=args.limit_complexes,
+            PDBBind(transform=None, root=args.data_dir, protein_dir_name=args.protein_dir_name, ligand_dir_name=args.ligand_dir_name,
+                    limit_complexes=args.limit_complexes,
                     receptor_radius=args.receptor_radius,
                     cache_path=args.cache_path, split_path=args.split_train,
                     remove_hs=args.remove_hs, max_lig_size=args.max_lig_size,
@@ -148,18 +172,27 @@ class AffinityDataset(Dataset):
                     atom_radius=args.atom_radius,
                     atom_max_neighbors=args.atom_max_neighbors,
                     esm_embeddings_path=args.esm_embeddings_path,
-                    require_ligand=True)
+                    require_ligand=True,
+                    graph_split=args.graph_split)
 
         print(f'HAPPENING | Loading allatom complex graphs from: {os.path.join(self.complex_graphs_allatom_cache, "heterographs.pkl")}')
-        if create_dataset:
+       
+
+        if self.graph_split:
+            self.dataset_names_allatom = [os.path.splitext(name)[0] for name in os.listdir(self.complex_graphs_allatom_cache) if name.startswith('heterograph_')]
+        else:
             with open(os.path.join(self.complex_graphs_allatom_cache, "heterographs.pkl"), 'rb') as f:
                 self.complex_graphs_allatom = pickle.load(f)
             self.complex_graph_allatom_dict = {d.name: d for d in self.complex_graphs_allatom}
         
-        if create_dataset:
+        
+        if self.graph_split:
+            assert len(self.dataset_names_calpha) == len(self.dataset_names_allatom)
+            self.dataset_names = list(set(self.dataset_names_calpha) & set(self.dataset_names_allatom))
+        else:
             assert len(self.complex_graph_calpha_dict) == len(self.complex_graph_allatom_dict)
 
-        self.full_cache_path = os.path.join(cache_path, f'davis_colabfold_model_{os.path.splitext(os.path.basename(args.split_train))[0]}'
+        self.full_cache_path = os.path.join(cache_path, f'{args.protein_dir_name}_{os.path.splitext(os.path.basename(args.split_train))[0]}'
                                             f'_split_train_limit_{limit_complexes}')
         
         print(f'self.full_cache_path: {self.full_cache_path}')
@@ -238,25 +271,47 @@ class AffinityDataset(Dataset):
         tor_schedule = tr_schedule
         print('common t schedule', tr_schedule)
         
-        #print('HAPPENING | loading cached complexes of the original model to create the confidence dataset RMSDs and predicted positions. Doing that from: ', os.path.join(self.complex_graphs_cache, "heterographs.pkl"))
-        #### check if splitting heterographs exists
-        # if os.path.exists(os.path.join(self.complex_graphs_cache, f"{self.heterographs_name}.pkl")):
-        #     with open(os.path.join(self.complex_graphs_cache, f"{self.heterographs_name}.pkl"), 'rb') as f:
-        #         complex_graphs = pickle.load(f)
-        # #### 
-        # else:
-        #     with open(os.path.join(self.complex_graphs_cache, "heterographs.pkl"), 'rb') as f:
-        #         complex_graphs = pickle.load(f)
-        #print(f'######### in the sampling process, the total number of complexes is {len(complex_graphs)}')
-        dataset = ListDataset(self.complex_graphs_calpha)
+
+        if self.graph_split:
+            dataset = ListDataset_graph_split(self.dataset_names, calpha_root_path=self.complex_graphs_calpha_cache, allatoms_root_path=self.complex_graphs_allatom_cache)
+        else:
+            dataset = ListDataset(self.complex_graphs_calpha)
+
         loader = DataLoader(dataset=dataset, batch_size=1, shuffle=False)
-        full_ligand_positions, confidences_ligand_positions, full_ligand_positions_rank1, confidence_rank1, names = {}, {}, {}, {}, []
+
+        if glob.glob(os.path.join(self.full_cache_path, '*_tmp.pkl')):
+
+            with open(os.path.join(self.full_cache_path, 'ligand_positions_tmp.pkl'), 'rb') as f:
+                full_ligand_positions = pickle.load(f)
+            with open(os.path.join(self.full_cache_path, 'confidences_ligand_positions_tmp.pkl'), 'rb') as f:
+                confidences_ligand_positions = pickle.load(f)
+            with open(os.path.join(self.full_cache_path, 'ligand_positions_rank1_tmp.pkl'), 'rb') as f:
+                full_ligand_positions_rank1 = pickle.load(f)
+            with open(os.path.join(self.full_cache_path, 'confidence_rank1_tmp.pkl'), 'rb') as f:
+                confidence_rank1 = pickle.load(f)
+            with open(os.path.join(self.full_cache_path, 'complex_names_in_same_order_tmp.pkl'), 'rb') as f:
+                names = pickle.load(f)
+
+            print(f'HAPPENING | Loaded the temporary cache files. {len(names)} complexes have been processed so far. remaining: {len(dataset) - len(names)}')
+
+        else:
+            full_ligand_positions, confidences_ligand_positions, full_ligand_positions_rank1, confidence_rank1, names = {}, {}, {}, {}, set() 
+        
         for idx, orig_complex_graph in tqdm(enumerate(loader)):
+
+            if self.graph_split:
+                orig_complex_graph, allatom_complex_graph = orig_complex_graph
+
+            if orig_complex_graph.name[0] in names:
+                continue
+
             data_list = [copy.deepcopy(orig_complex_graph) for _ in range(self.samples_per_complex)]
             randomize_position(data_list, self.original_model_args.no_torsion, False, self.original_model_args.tr_sigma_max)
-            # lig = orig_complex_graph.mol[0]
             if confidence_model is not None and not (self.confidence_model_args.use_original_model_cache or self.confidence_model_args.transfer_weights):
-                confidence_data_list = [copy.deepcopy(self.complex_graph_allatom_dict[orig_complex_graph.name[0]]) for _ in range(self.samples_per_complex)]
+                if self.graph_split:
+                    confidence_data_list = [copy.deepcopy(allatom_complex_graph) for _ in range(self.samples_per_complex)]
+                else: 
+                    confidence_data_list = [copy.deepcopy(self.complex_graph_allatom_dict[orig_complex_graph.name[0]]) for _ in range(self.samples_per_complex)]
             else:
                 confidence_data_list = None
 
@@ -301,24 +356,26 @@ class AffinityDataset(Dataset):
             if self.original_model_args.no_torsion:
                 orig_complex_graph['ligand'].orig_pos = (orig_complex_graph['ligand'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy())
 
-            # filterHs = torch.not_equal(predictions_list[0]['ligand'].x[:, 0], 0).cpu().numpy()
-
-            # if isinstance(orig_complex_graph['ligand'].orig_pos, list):
-            #     orig_complex_graph['ligand'].orig_pos = orig_complex_graph['ligand'].orig_pos[0]
-            
-            # ligand_pos = np.asarray([complex_graph['ligand'].pos.cpu().numpy()[filterHs] for complex_graph in predictions_list])
-            # orig_ligand_pos = np.expand_dims(orig_complex_graph['ligand'].orig_pos[filterHs] - orig_complex_graph.original_center.cpu().numpy(), axis=0)
-            # rmsd = np.sqrt(((ligand_pos - orig_ligand_pos) ** 2).sum(axis=2).mean(axis=1))
-
-            # rmsds.append(rmsd)
-            # full_ligand_positions.append(np.asarray([complex_graph['ligand'].pos.cpu().numpy() for complex_graph in predictions_list]))
             if failed_convergence_counter > 5:
                 pass
             else:
-                names.append(orig_complex_graph.name[0])
+                names.add(orig_complex_graph.name[0])
                 confidences_ligand_positions[orig_complex_graph.name[0]] = confidences
                 full_ligand_positions[orig_complex_graph.name[0]] = ligand_pos
             assert(len(orig_complex_graph.name) == 1) # I just put this assert here because of the above line where I assumed that the list is always only lenght 1. Just in case it isn't maybe check what the names in there are.
+
+            if idx % 100 == 0:
+
+                with open(os.path.join(self.full_cache_path, 'ligand_positions_tmp.pkl'), 'wb') as f:
+                    pickle.dump((full_ligand_positions), f)
+                with open(os.path.join(self.full_cache_path, 'confidences_ligand_positions_tmp.pkl'), 'wb') as f:
+                    pickle.dump((confidences_ligand_positions), f)
+                with open(os.path.join(self.full_cache_path, 'ligand_positions_rank1_tmp.pkl'), 'wb') as f:
+                    pickle.dump((full_ligand_positions_rank1), f)  
+                with open(os.path.join(self.full_cache_path, 'confidence_rank1_tmp.pkl'), 'wb') as f:
+                    pickle.dump((confidence_rank1), f)
+                with open(os.path.join(self.full_cache_path, 'complex_names_in_same_order_tmp.pkl'), 'wb') as f:
+                    pickle.dump((names), f)
         
         with open(os.path.join(self.full_cache_path, f"ligand_positions_rank1{'' if self.cache_creation_id is None else '_id' + str(self.cache_creation_id)}{'' if self.heterographs_name is None else '_'+ str(self.heterographs_name)}.pkl"), 'wb') as f:
             pickle.dump((full_ligand_positions_rank1), f)
@@ -341,7 +398,9 @@ if __name__ == '__main__':
     parser.add_argument('--original_model_dir', type=str, default='workdir/paper_score_model', help='Path to folder with trained model and hyperparameters')
     parser.add_argument('--restart_dir', type=str, default=None, help='')
     parser.add_argument('--use_original_model_cache', action='store_true', default=False, help='If this is true, the same dataset as in the original model will be used. Otherwise, the dataset parameters are used.')
-    parser.add_argument('--data_dir', type=str, default='../../data/benchmark/', help='Folder containing original structures')
+    parser.add_argument('--data_dir', type=str, default='../../data/benchmark', help='Folder containing original structures')
+    parser.add_argument('--protein_dir_name', type=str, default='davis_colabfold_protein', help='Folder containing original structures')
+    parser.add_argument('--ligand_dir_name', type=str, default='davis_ligand', help='Folder containing original structures')
     parser.add_argument('--ckpt', type=str, default='best_model.pt', help='Checkpoint to use inside the folder')
     parser.add_argument('--model_save_frequency', type=int, default=0, help='Frequency with which to save the last model. If 0, then only the early stopping criterion best model is saved and overwritten.')
     parser.add_argument('--best_model_save_frequency', type=int, default=0, help='Frequency with which to save the best model. If 0, then only the early stopping criterion best model is saved and overwritten.')
@@ -398,8 +457,9 @@ if __name__ == '__main__':
     parser.add_argument('--max_lig_size', type=int, default=100, help='Maximum number of heavy atoms')
     parser.add_argument('--remove_hs', action='store_true', default=False, help='remove Hs')
     parser.add_argument('--num_conformers', type=int, default=1, help='')
-    parser.add_argument('--esm_embeddings_path', type=str, default='data/esm2_3billion_embeddings_kdbnet_colabfold.pt',help='If this is set then the LM embeddings at that path will be used for the receptor features')
+    parser.add_argument('--esm_embeddings_path', type=str, default='data/esm2_3billion_embeddings_davis_colabfold.pt',help='If this is set then the LM embeddings at that path will be used for the receptor features')
     parser.add_argument('--no_torsion', action='store_true', default=False, help='')
+    parser.add_argument('--graph_split', action='store_true', default=False, help='save individual graphs and load them individually')
 
     # Model
     parser.add_argument('--num_conv_layers', type=int, default=2, help='Number of interaction layers')

@@ -6,9 +6,22 @@ import pandas as pd
 from tqdm import tqdm
 import pymol
 from rdkit import RDLogger
+import argparse
+
 RDLogger.DisableLog('rdApp.*')
 
-# %%
+def parse_args():
+    parser = argparse.ArgumentParser(description='Description of your script')
+    
+    # Add arguments here
+    parser.add_argument('--data_df', type=str, default='data/benchmark/davis_data.tsv', help='data of protein and ligand')
+    parser.add_argument('--complex_path', type=str, default='data/benchmark/davis_complex_colabfold_diffdock', help='the path of diffdock protein positions')
+    parser.add_argument('--distance', type=int, default=5, help='distance to generate pocket')
+    parser.add_argument('--input_ligand_format', type=str, default='sdf', help='input ligand format')
+    args = parser.parse_args()
+    return args
+
+
 def generate_pocket(data_dir, distance=5):
     ls_name = os.listdir(data_dir)
     for name in tqdm(ls_name):
@@ -21,8 +34,8 @@ def generate_pocket(data_dir, distance=5):
             ligand_path = os.path.join(complex_dir, f"{lig_name}_ligand_diffdock.sdf")
             protein_path= os.path.join(complex_dir, f"{pro_name}_protein_processed.pdb")
 
-            # if os.path.exists(os.path.join(complex_dir, f'Pocket_{distance}A.pdb')):
-            #     continue
+            if os.path.exists(os.path.join(complex_dir, f'Pocket_{distance}A.pdb')):
+                continue
 
             pymol.cmd.load(protein_path)
             pymol.cmd.remove('resn HOH')
@@ -35,6 +48,7 @@ def generate_pocket(data_dir, distance=5):
             print(f'cannot generate pocket for {name}, due to {e}')
 
 def generate_complex(data_dir, data_df, distance=5, input_ligand_format='sdf'):
+    data_df = pd.read_csv(data_df, sep='\t')
     pbar = tqdm(total=len(data_df))
     for i, row in data_df.iterrows():
         try:
@@ -81,13 +95,8 @@ def generate_complex(data_dir, data_df, distance=5, input_ligand_format='sdf'):
             print(f'cannot generate complex for {name}, due to {e}')
 
 if __name__ == '__main__':
-    distance = 5
-    input_ligand_format = 'sdf'
-    data_dir = 'data/benchmark/complex'
-    data_df = pd.read_csv('data/benchmark/davis_data.tsv', sep='\t')
-    
+    args = parse_args()
     ## generate pocket within 5 Ångström around ligand 
-    generate_pocket(data_dir=data_dir, distance=distance)
-    generate_complex(data_dir, data_df, distance=distance, input_ligand_format=input_ligand_format)
+    generate_pocket(data_dir=args.complex_path, distance=args.distance)
+    generate_complex(data_dir=args.complex_path, data_df=args.data_df, distance=args.distance, input_ligand_format=args.input_ligand_format)
     
-# %%

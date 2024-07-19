@@ -58,6 +58,10 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--split_method', type=str, default=None)
     parser.add_argument('--gpu', type=int, default=1)
+    parser.add_argument('--data_df', type=str, default='../../data/benchmark/davis_data.tsv', help='data of protein and ligand')
+    parser.add_argument('--complex_path', type=str, default='../../data/benchmark/davis_complex_colabfold_diffdock', help='the path of the complexes')
+    parser.add_argument('--mmseqs_seq_clus_df', type=str, default='../../data/benchmark/davis_cluster_id50_cluster.tsv', help='the path of mmseqs seq clus')
+
     args_ = parser.parse_args()
 
     all_test_mse = []
@@ -66,12 +70,12 @@ if __name__ == '__main__':
     
     for repeat in range(repeats):
         args['repeat'] = repeat
-        data_root = '../../data/benchmark/complex'
-        data_df = pd.read_csv('../../data/benchmark/davis_data.tsv', sep='\t')
+        data_root = args_.complex_path
+        data_df = pd.read_csv(args_.data_df , sep='\t')
     
-        train_set = GraphDataset(data_root, data_df, split_method=args_.split_method, split='train', graph_type='Graph_GIGN', dis_threshold=5, create=False, seed=repeat)
-        val_set = GraphDataset(data_root, data_df, split_method=args_.split_method, split='val', graph_type='Graph_GIGN', dis_threshold=5, create=False, seed=repeat)
-        test_set = GraphDataset(data_root, data_df, split_method=args_.split_method, split='test', graph_type='Graph_GIGN', dis_threshold=5, create=False, seed=repeat)
+        train_set = GraphDataset(data_root, data_df, split_method=args_.split_method, split='train', graph_type='Graph_GIGN', dis_threshold=5, create=False, seed=repeat, mmseqs_seq_clus_df=args_.mmseqs_seq_clus_df)
+        val_set = GraphDataset(data_root, data_df, split_method=args_.split_method, split='val', graph_type='Graph_GIGN', dis_threshold=5, create=False, seed=repeat, mmseqs_seq_clus_df=args_.mmseqs_seq_clus_df)
+        test_set = GraphDataset(data_root, data_df, split_method=args_.split_method, split='test', graph_type='Graph_GIGN', dis_threshold=5, create=False, seed=repeat, mmseqs_seq_clus_df=args_.mmseqs_seq_clus_df)
 
         train_loader = PLIDataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=4)
         valid_loader = PLIDataLoader(val_set, batch_size=batch_size, shuffle=False, num_workers=4)

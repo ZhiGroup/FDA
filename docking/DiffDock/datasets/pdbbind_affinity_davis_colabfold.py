@@ -56,14 +56,16 @@ class NoiseTransform(BaseTransform):
 
 
 class PDBBind(Dataset):
-    def __init__(self, root, transform=None, cache_path='data/cache', split_path='data/', limit_complexes=0,
+    def __init__(self, root, protein_dir_name, ligand_dir_name, transform=None, cache_path='data/cache', split_path='data/', limit_complexes=0,
                  receptor_radius=30, num_workers=1, c_alpha_max_neighbors=None, popsize=15, maxiter=15,
                  matching=True, keep_original=False, max_lig_size=None, remove_hs=False, num_conformers=1, all_atoms=False,
                  atom_radius=5, atom_max_neighbors=None, esm_embeddings_path=None, require_ligand=False,
-                 ligands_list=None, protein_path_list=None, ligand_descriptions=None, keep_local_structures=False):
+                 ligands_list=None, protein_path_list=None, ligand_descriptions=None, keep_local_structures=False, graph_split=False):
 
         super(PDBBind, self).__init__(root, transform)
         self.pdbbind_dir = root
+        self.protein_dir_name = protein_dir_name
+        self.ligand_dir_name = ligand_dir_name
         self.max_lig_size = max_lig_size
         self.split_path = split_path
         self.limit_complexes = limit_complexes
@@ -81,7 +83,7 @@ class PDBBind(Dataset):
         if all_atoms:
             cache_path += '_allatoms'
         self.full_cache_path = os.path.join(cache_path, f'limit{self.limit_complexes}'
-                                                        f'_INDEX_davis_colabfold_{os.path.splitext(os.path.basename(self.split_path))[0]}'
+                                                        f'_INDEX_{self.protein_dir_name}_{os.path.splitext(os.path.basename(self.split_path))[0]}'
                                                         f'_maxLigSize{self.max_lig_size}_H{int(not self.remove_hs)}'
                                                         f'_recRad{self.receptor_radius}_recMax{self.c_alpha_max_neighbors}'
                                             + ('' if not all_atoms else f'_atomRad{atom_radius}_atomMax{atom_max_neighbors}')
@@ -93,6 +95,7 @@ class PDBBind(Dataset):
         self.matching, self.keep_original = matching, keep_original
         self.num_conformers = num_conformers
         self.all_atoms = all_atoms
+        self.graph_split = graph_split
         self.atom_radius, self.atom_max_neighbors = atom_radius, atom_max_neighbors
         if not os.path.exists(os.path.join(self.full_cache_path, "heterographs.pkl"))\
                 or (require_ligand and not os.path.exists(os.path.join(self.full_cache_path, "rdkit_ligands.pkl"))):
@@ -102,14 +105,14 @@ class PDBBind(Dataset):
             else:
                 self.inference_preprocessing()
 
-        print('loading data from memory: ', os.path.join(self.full_cache_path, "heterographs.pkl"))
-        with open(os.path.join(self.full_cache_path, "heterographs.pkl"), 'rb') as f:
-            self.complex_graphs = pickle.load(f)
-        if require_ligand:
-            with open(os.path.join(self.full_cache_path, "rdkit_ligands.pkl"), 'rb') as f:
-                self.rdkit_ligands = pickle.load(f)
+        # print('loading data from memory: ', os.path.join(self.full_cache_path, "heterographs.pkl"))
+        # with open(os.path.join(self.full_cache_path, "heterographs.pkl"), 'rb') as f:
+        #     self.complex_graphs = pickle.load(f)
+        # if require_ligand:
+        #     with open(os.path.join(self.full_cache_path, "rdkit_ligands.pkl"), 'rb') as f:
+        #         self.rdkit_ligands = pickle.load(f)
         # print(self.complex_graphs)
-        print_statistics(self.complex_graphs)
+        # print_statistics(self.complex_graphs)
 
     def len(self):
         return len(self.complex_graphs)
@@ -133,13 +136,19 @@ class PDBBind(Dataset):
         if self.esm_embeddings_path is not None:
             id_to_embeddings = torch.load(self.esm_embeddings_path)
             chain_embeddings_dictlist = defaultdict(list)
+            chain_indices_dictlist = defaultdict(list)
             for key, embedding in id_to_embeddings.items():
-                key_name = key.split('_')[0]
+                key_name = key.split('_chain_')[0]
                 if key_name in set(df_lig_rec['protein']):
                     chain_embeddings_dictlist[key_name].append(embedding)
+                    chain_indices_dictlist[key_name].append(int(key.split('_chain_')[1]))
             lm_embeddings_chains_all = []
-            for name in list(df_lig_rec['protein']):
-                lm_embeddings_chains_all.append(chain_embeddings_dictlist[name])
+            for name in df_lig_rec['protein']:
+                complex_chains_embeddings = chain_embeddings_dictlist[name]
+                complex_chains_indices = chain_indices_dictlist[name]
+                chain_reorder_idx = np.argsort(complex_chains_indices)
+                reordered_chains = [complex_chains_embeddings[i] for i in chain_reorder_idx]
+                lm_embeddings_chains_all.append(reordered_chains)
         else:
             lm_embeddings_chains_all = [None] * len(df_lig_rec)
 
@@ -197,10 +206,18 @@ class PDBBind(Dataset):
                     complex_graphs.extend(t[0])
                     rdkit_ligands.extend(t[1])
                     pbar.update()
-            with open(os.path.join(self.full_cache_path, "heterographs.pkl"), 'wb') as f:
-                pickle.dump((complex_graphs), f)
-            with open(os.path.join(self.full_cache_path, "rdkit_ligands.pkl"), 'wb') as f:
-                pickle.dump((rdkit_ligands), f)
+            
+            if self.graph_split:
+                for heterograph in complex_graphs:
+                    name = heterograph.name
+                    save_path = os.path.join(self.full_cache_path, f'heterograph_{name}.pkl')
+                    with open(save_path, "wb") as file:
+                        pickle.dump(heterograph, file)
+            else:
+                with open(os.path.join(self.full_cache_path, "heterographs.pkl"), 'wb') as f:
+                    pickle.dump((complex_graphs), f)
+            # with open(os.path.join(self.full_cache_path, "rdkit_ligands.pkl"), 'wb') as f:
+            #     pickle.dump((rdkit_ligands), f)
 
     def inference_preprocessing(self):
         ligands_list = []
@@ -290,14 +307,14 @@ class PDBBind(Dataset):
         name, lm_embedding_chains, ligand, rec, affinity = par
     
         try:
-            rec_model = parse_pdb_from_path(os.path.join(self.pdbbind_dir, 'davis_colabfold_protein', f'{rec}.pdb'))
+            rec_model = parse_pdb_from_path(os.path.join(self.pdbbind_dir, self.protein_dir_name, f'{rec}.pdb'))
         except Exception as e:
             print(f'Skipping {name} because of the error:')
             print(e)
             return [], []
         
         ligs =[]
-        ligs.append(read_molecule(f'{os.path.join(self.pdbbind_dir, "davis_ligand", str(ligand))}.sdf', remove_hs=self.remove_hs, sanitize=True))
+        ligs.append(read_molecule(f'{os.path.join(self.pdbbind_dir, self.ligand_dir_name, str(ligand))}.sdf', remove_hs=self.remove_hs, sanitize=True))
             
         complex_graphs = []
         for i, lig in enumerate(ligs):

@@ -4,4 +4,6 @@ data/ablation_study/*
 *.tar.gz
 *.npy
 *.pkl
+*.log
+*.pyc
 

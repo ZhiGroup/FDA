@@ -22,6 +22,7 @@ pip install scipy
 pip install --no-index pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-1.11.0+cu113.html
 pip install torch_geometric
 python -m pip install PyYAML scipy "networkx[default]" biopython rdkit-pypi e3nn spyrmsd pandas biopandas
+!!!! need to install openbabel, but seems to have conflicts.
 ```
 ## Datasets
 Create a directory `/data`, and download the processed data for replicating benchmark and ablation study results from [zenodo](https://zenodo.org/records/10968593) and decompress the files
@@ -71,34 +72,44 @@ Create protein-ligand complex directories
 ```
 python docking/create_dir.py
 ```
-Implement DiffDock to generate ligand binding poses. Download ESM2 embedding from [zenodo](https://zenodo.org/records/10968593/files/esm2_3billion_embeddings_davis_colabfold.pt.tar.gz?download=1) and place the file in `docking/DiffDock/data/`. The process of generating ESM2 embedding could refer [DiffDock](https://github.com/gcorso/DiffDock/tree/v1.0)
+Download ESM2 embedding from [zenodo](https://zenodo.org/records/10968593/files/esm2_3billion_embeddings_davis_colabfold.pt.tar.gz?download=1) and place the file in `docking/DiffDock/data/` for the input of DiffDock. The process of generating ESM2 embedding could refer [DiffDock](https://github.com/gcorso/DiffDock/tree/v1.0) or
+follow the following commands.
 
 ```
 cd docking/DiffDock
-python -m affinity.dataset_davis_colabfold --run_name davis_colabfold --inference_steps 20 --samples_per_complex 10 --batch_size 10 --ns 12 --nv 6 --num_conv_layers 3 --dynamic_max_cross --scale_by_sigma --dropout 0.2 --remove_hs --c_alpha_max_neighbors 24 --receptor_radius 15 --gpu_num 6
+python datasets/esm_embedding_preparation.py --protein_path ../../data/benchmark/davis_colabfold_protein --out_file data/davis_colabfold_protein.fasta
+cd esm
+python scripts/extract.py esm2_t33_650M_UR50D ../data/davis_colabfold_protein.fasta ../data/davis_colabfold_protein_embedding_output --repr_layers 33 --include per_tok --truncation_seq_length 4096
+cd ../
+python datasets/esm_embeddings_to_pt.py --esm_embeddings_path data/davis_colabfold_protein_embedding_output --output_path data/esm2_3billion_embeddings_davis_colabfold_protein.pt
 ```
 
-Add DiffDock-generated ligand poses into original complex directories.
+Implement DiffDock to generate ligand binding poses
+```
+cd docking/DiffDock
+python -m affinity.dataset_davis_colabfold --run_name davis_colabfold --split_train ../../data/benchmark/davis_data.tsv --data_dir ../../data/benchmark --protein_dir_name davis_colabfold_protein --ligand_dir_name davis_ligand --esm_embeddings_path data/esm2_3billion_embeddings_davis_colabfold_protein.pt --inference_steps 20 --samples_per_complex 10 --batch_size 10 --ns 12 --nv 6 --num_conv_layers 3 --dynamic_max_cross --scale_by_sigma --dropout 0.2 --remove_hs --c_alpha_max_neighbors 24 --receptor_radius 15 --gpu_num 0
+```
+
+Update DiffDock-generated ligand poses into original complex directories.
 
 ```
 cd ../../
-python docking/update_dir.py
+python docking/update_dir.py --diffdock_ligand_path docking/DiffDock/data/cacheNew/davis_colabfold_protein_davis_data_split_train_limit_0/ligand_positions_rank1.pkl --complex_path data/benchmark/davis_complex_colabfold_diffdock
 ```
 
 #### Affinity
 Pre-process protein-ligand complexes and generate inputs for GIGN.
 
 ```
-python affinity/GIGN/preprocessing.py
+python affinity/GIGN/preprocessing.py --data_df data/benchmark/davis_data.tsv --complex_path data/benchmark/davis_complex_colabfold_diffdock
 cd affinity/GIGN
-python dataset_GIGN_benchmark.py
+python affinity/GIGN/dataset_GIGN_benchmark.py --data_df data/benchmark/davis_data.tsv --complex_path data/benchmark/davis_complex_colabfold_diffdock --mmseqs_seq_clus_df data/benchmark/davis_cluster_id50_cluster.tsv
 ```
-
 ##### Train GIGN to predict binding affinity under different split_methods (drug, protein, both, and seqid).
 
 ```
 cd affinity/GIGN
-python train_GIGN_benchmark.py --split_method drug --gpu 0
+python train_GIGN_benchmark.py --split_method drug --gpu 0 --data_df ../../data/benchmark/davis_data.tsv --complex_path ../../data/benchmark/davis_complex_colabfold_diffdock
 ```
 ### Ablation study
 Download the processed data from [zenodo](https://zenodo.org/records/10968593/files/ablation_study.tar.gz?download=1) and place them in `/data`. Train GIGN to predict binding affinity under three different scenarios (crystal\_crystal, crystal\_diffdock, and colabfold\_diffdock).

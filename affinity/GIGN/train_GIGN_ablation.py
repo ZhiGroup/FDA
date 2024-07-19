@@ -187,8 +187,8 @@ if __name__ == '__main__':
         all_colabfold_diffdock_rp.append(colabfold_diffdock_pr)
         
 
-        msg = "valid_rmse-%.4f, valid_pr-%.4f, crystal_crystal_mse-%.4f, crystal_diffdock_mse-%.4f, colabfold_diffdock_mse-%.4f"\
-               % (valid_rmse, valid_pr, crystal_crystal_mse, crystal_diffdock_mse, colabfold_diffdock_mse)
+        msg = "valid_rmse-%.4f, valid_pr-%.4f, crystal_crystal_mse-%.4f, crystal_diffdock_mse-%.4f, colabfold_diffdock_mse-%.4f, crystal_crystal_rp-%.4f, crystal_diffdock_rp-%.4f, colabfold_diffdock_rp-%.4f"\
+               % (valid_rmse, valid_pr, crystal_crystal_mse, crystal_diffdock_mse, colabfold_diffdock_mse, crystal_crystal_pr, crystal_diffdock_pr, colabfold_diffdock_pr)
 
         logger.info(msg)
         

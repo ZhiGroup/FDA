@@ -15,12 +15,14 @@ from rdkit import Chem
 from torch_geometric.data import Batch, Data
 import warnings
 from kdbnet.dta import create_fold, create_fold_setting_cold, create_full_ood_set, create_seq_identity_fold
+import argparse
 
 RDLogger.DisableLog('rdApp.*')
 np.set_printoptions(threshold=np.inf)
 warnings.filterwarnings('ignore')
 
-# %%
+
+
 def one_of_k_encoding(k, possible_values):
     if k not in possible_values:
         raise ValueError(f"{k} is not a valid value in {possible_values}")
@@ -95,28 +97,30 @@ def mols2graphs(complex_path, label, save_path, dis_threshold=5.):
         return
     # if os.path.exists(save_path):
     #     return
+    try: 
+        with open(complex_path, 'rb') as f:
+            ligand, pocket = pickle.load(f)
 
-    with open(complex_path, 'rb') as f:
-        ligand, pocket = pickle.load(f)
+        atom_num_l = ligand.GetNumAtoms()
+        atom_num_p = pocket.GetNumAtoms()
 
-    atom_num_l = ligand.GetNumAtoms()
-    atom_num_p = pocket.GetNumAtoms()
+        pos_l = torch.FloatTensor(ligand.GetConformers()[0].GetPositions())
+        pos_p = torch.FloatTensor(pocket.GetConformers()[0].GetPositions())
+        x_l, edge_index_l = mol2graph(ligand)
+        x_p, edge_index_p = mol2graph(pocket)
+        x = torch.cat([x_l, x_p], dim=0)
+        edge_index_intra = torch.cat([edge_index_l, edge_index_p+atom_num_l], dim=-1)
+        edge_index_inter = inter_graph(ligand, pocket, dis_threshold=dis_threshold)
+        y = torch.FloatTensor([label])
+        pos = torch.concat([pos_l, pos_p], dim=0)
+        split = torch.cat([torch.zeros((atom_num_l, )), torch.ones((atom_num_p,))], dim=0)
+        
+        data = Data(x=x, edge_index_intra=edge_index_intra, edge_index_inter=edge_index_inter, y=y, pos=pos, split=split)
 
-    pos_l = torch.FloatTensor(ligand.GetConformers()[0].GetPositions())
-    pos_p = torch.FloatTensor(pocket.GetConformers()[0].GetPositions())
-    x_l, edge_index_l = mol2graph(ligand)
-    x_p, edge_index_p = mol2graph(pocket)
-    x = torch.cat([x_l, x_p], dim=0)
-    edge_index_intra = torch.cat([edge_index_l, edge_index_p+atom_num_l], dim=-1)
-    edge_index_inter = inter_graph(ligand, pocket, dis_threshold=dis_threshold)
-    y = torch.FloatTensor([label])
-    pos = torch.concat([pos_l, pos_p], dim=0)
-    split = torch.cat([torch.zeros((atom_num_l, )), torch.ones((atom_num_p,))], dim=0)
-    
-    data = Data(x=x, edge_index_intra=edge_index_intra, edge_index_inter=edge_index_inter, y=y, pos=pos, split=split)
-
-    torch.save(data, save_path)
+        torch.save(data, save_path)
     # return data
+    except Exception as e:
+        print(f'cannot process {complex_path}, error: {e}')
 
 # %%
 class PLIDataLoader(DataLoader):
@@ -127,7 +131,7 @@ class GraphDataset(Dataset):
     """
     This class is used for generating graph objects using multi process
     """
-    def __init__(self, data_dir, data_df, split_method, split, dis_threshold=5, graph_type='Graph_GIGN', num_process=8, create=False, seed=None):
+    def __init__(self, data_dir, data_df, split_method, split, mmseqs_seq_clus_df, dis_threshold=5, graph_type='Graph_GIGN', num_process=8, create=False, seed=None):
         self.data_dir = data_dir
         self.data_df = data_df
         self.dis_threshold = dis_threshold
@@ -138,7 +142,7 @@ class GraphDataset(Dataset):
         self.num_process = num_process
         self.split_method = split_method
         self.split = split
-        self.mmseqs_seq_clus_df = pd.read_table('davis_cluster_id50_cluster.tsv', names=['rep', 'seq']) 
+        self.mmseqs_seq_clus_df = pd.read_table(mmseqs_seq_clus_df, names=['rep', 'seq']) 
         self.seed = seed
         self._pre_process()
         
@@ -241,49 +245,58 @@ class GraphDataset(Dataset):
             raise ValueError(f"Unknown split: {self.split}")
 
 if __name__ == '__main__':
- 
-    data_root = '../../data/benchmark/complex'
-    data_df = pd.read_csv('../../data/benchmark/davis_data.tsv', sep='\t')
+
+    parser = argparse.ArgumentParser(description='Description of your script')
+    parser.add_argument('--data_df', type=str, default='data/benchmark/davis_data.tsv', help='data of protein and ligand')
+    parser.add_argument('--complex_path', type=str, default='data/benchmark/davis_complex_colabfold_diffdock', help='the path of the complexes')
+    parser.add_argument('--mmseqs_seq_clus_df', type=str, default='data/benchmark/davis_cluster_id50_cluster.tsv', help='the path of mmseqs seq clus')
+    args = parser.parse_args()
+
+
+    data_root = args.complex_path
+    data_df = args.data_df
+    mmseqs_seq_clus_df= args.mmseqs_seq_clus_df
+    data_df = pd.read_csv(data_df, sep='\t')
     
-    drug_train = GraphDataset(data_root, data_df, split_method='drug', split='train', graph_type='Graph_GIGN', dis_threshold=5, create=True)
-    drug_val = GraphDataset(data_root, data_df, split_method='drug', split='val', graph_type='Graph_GIGN', dis_threshold=5, create=True)
-    drug_test = GraphDataset(data_root, data_df, split_method='drug', split='test', graph_type='Graph_GIGN', dis_threshold=5, create=True)
+    drug_train = GraphDataset(data_root, data_df, split_method='drug', split='train', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    drug_val = GraphDataset(data_root, data_df, split_method='drug', split='val', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    drug_test = GraphDataset(data_root, data_df, split_method='drug', split='test', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
     
     print(f'split_method: drug')
     print(f"drug_train: {len(drug_train)}")
     print(f"drug_val: {len(drug_val)}")
     print(f"drug_test: {len(drug_test)}")
 
-    protein_train = GraphDataset(data_root, data_df, split_method='protein', split='train', graph_type='Graph_GIGN', dis_threshold=5, create=True)
-    protein_val = GraphDataset(data_root, data_df, split_method='protein', split='val', graph_type='Graph_GIGN', dis_threshold=5, create=True)
-    protein_test = GraphDataset(data_root, data_df, split_method='protein', split='test', graph_type='Graph_GIGN', dis_threshold=5, create=True)
+    protein_train = GraphDataset(data_root, data_df, split_method='protein', split='train', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    protein_val = GraphDataset(data_root, data_df, split_method='protein', split='val', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    protein_test = GraphDataset(data_root, data_df, split_method='protein', split='test', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
     
     print(f'split_method: protein')
     print(f"protein_train: {len(protein_train)}")
     print(f"protein_val: {len(protein_val)}")
     print(f"protein_test: {len(protein_test)}")
 
-    both_train = GraphDataset(data_root, data_df, split_method='both', split='train', graph_type='Graph_GIGN', dis_threshold=5, create=True)
-    both_val = GraphDataset(data_root, data_df, split_method='both', split='val', graph_type='Graph_GIGN', dis_threshold=5, create=True)
-    both_test = GraphDataset(data_root, data_df, split_method='both', split='test', graph_type='Graph_GIGN', dis_threshold=5, create=True)
+    both_train = GraphDataset(data_root, data_df, split_method='both', split='train', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    both_val = GraphDataset(data_root, data_df, split_method='both', split='val', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    both_test = GraphDataset(data_root, data_df, split_method='both', split='test', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
     
     print(f'split_method: both')
     print(f"both_train: {len(both_train)}")
     print(f"both_val: {len(both_val)}")
     print(f"both_test: {len(both_test)}")
 
-    seqid_train = GraphDataset(data_root, data_df, split_method='seqid', split='train', graph_type='Graph_GIGN', dis_threshold=5, create=True)
-    seqid_val = GraphDataset(data_root, data_df, split_method='seqid', split='val', graph_type='Graph_GIGN', dis_threshold=5, create=True)
-    seqid_test = GraphDataset(data_root, data_df, split_method='seqid', split='test', graph_type='Graph_GIGN', dis_threshold=5, create=True)
+    seqid_train = GraphDataset(data_root, data_df, split_method='seqid', split='train', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    seqid_val = GraphDataset(data_root, data_df, split_method='seqid', split='val', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    seqid_test = GraphDataset(data_root, data_df, split_method='seqid', split='test', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
     
     print(f'split_method: seqid')
     print(f"seqid_train: {len(drug_train)}")
     print(f"seqid_val: {len(drug_val)}")
     print(f"seqid_test: {len(drug_test)}")
 
-    random_train = GraphDataset(data_root, data_df, split_method='random', split='train', graph_type='Graph_GIGN', dis_threshold=5, create=True)
-    random_val = GraphDataset(data_root, data_df, split_method='random', split='val', graph_type='Graph_GIGN', dis_threshold=5, create=True)
-    random_test = GraphDataset(data_root, data_df, split_method='random', split='test', graph_type='Graph_GIGN', dis_threshold=5, create=True)
+    random_train = GraphDataset(data_root, data_df, split_method='random', split='train', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    random_val = GraphDataset(data_root, data_df, split_method='random', split='val', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    random_test = GraphDataset(data_root, data_df, split_method='random', split='test', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
 
     print(f'split_method: random')
     print(f"random_train: {len(random_train)}")
