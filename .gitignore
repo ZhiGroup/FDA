@@ -6,4 +6,13 @@ data/ablation_study/*
 *.pkl
 *.log
 *.pyc
+*.pdb
+*.sdf
+*.json
+*.rdkit
+*.pyg
+*DB*
+pref_*
+*.csv
+
 
