@@ -29,9 +29,11 @@ def parse_arguments():
 
 args = parse_arguments()
 
-data_complex_dir = os.path.join(args.data_dir, f'{args.complex_dir_name}') 
-davis_data = pd.read_csv(os.path.join(args.data_dir, f'{args.data_csv}'), sep='\t')
-
+data_complex_dir = os.path.join(args.data_dir, f'{args.complex_dir_name}')
+if os.path.splitext(args.data_csv)[1] == '.tsv':
+    davis_data = pd.read_csv(os.path.join(args.data_dir, f'{args.data_csv}'), sep='\t')
+if os.path.splitext(args.data_csv)[1] == '.csv':
+    davis_data = pd.read_csv(os.path.join(args.data_dir, f'{args.data_csv}'))
 
 if not os.path.exists(data_complex_dir):
     os.makedirs(data_complex_dir)

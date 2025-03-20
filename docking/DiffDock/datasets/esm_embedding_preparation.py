@@ -46,7 +46,8 @@ three_to_one = {'ALA':	'A',
 'XLE':	'J'}
 
 if args.protein_path is not None:
-    file_paths = [args.protein_path]
+    protein_path = args.protein_path
+    file_paths = [os.path.join(protein_path, f) for f in os.listdir(protein_path) if f.endswith('.pdb')]
 else:
     df = pd.read_csv(args.protein_ligand_csv)
     file_paths = list(set(df['protein_path'].tolist()))

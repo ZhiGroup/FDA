@@ -90,13 +90,13 @@ def inter_graph(ligand, pocket, dis_threshold = 5.):
 
     return edge_index_inter
 
-# %%
+
 def mols2graphs(complex_path, label, save_path, dis_threshold=5.):
     if not os.path.exists(complex_path):
         print(f"{complex_path} does not exist.")
         return
-    # if os.path.exists(save_path):
-    #     return
+    if os.path.exists(save_path):
+        return
     try: 
         with open(complex_path, 'rb') as f:
             ligand, pocket = pickle.load(f)
@@ -122,7 +122,7 @@ def mols2graphs(complex_path, label, save_path, dis_threshold=5.):
     except Exception as e:
         print(f'cannot process {complex_path}, error: {e}')
 
-# %%
+
 class PLIDataLoader(DataLoader):
     def __init__(self, data, **kwargs):
         super().__init__(data, collate_fn=data.collate_fn, **kwargs)
@@ -131,7 +131,7 @@ class GraphDataset(Dataset):
     """
     This class is used for generating graph objects using multi process
     """
-    def __init__(self, data_dir, data_df, split_method, split, mmseqs_seq_clus_df, dis_threshold=5, graph_type='Graph_GIGN', num_process=8, create=False, seed=None):
+    def __init__(self, data_dir, data_df, split_method, split, mmseqs_seq_clus_df, top_n, protein_rank=None, dis_threshold=5, graph_type='Graph_GIGN', num_process=8, create=False, seed=None):
         self.data_dir = data_dir
         self.data_df = data_df
         self.dis_threshold = dis_threshold
@@ -144,6 +144,8 @@ class GraphDataset(Dataset):
         self.split = split
         self.mmseqs_seq_clus_df = pd.read_table(mmseqs_seq_clus_df, names=['rep', 'seq']) 
         self.seed = seed
+        self.top_n = top_n
+        self.protein_rank = protein_rank
         self._pre_process()
         
        
@@ -188,7 +190,7 @@ class GraphDataset(Dataset):
         elif self.split == 'val':
             return torch.load(self.val_graph_list[idx])
         elif self.split == 'test':
-            return torch.load(self.test_graph_list[idx])
+            return torch.load(self.test_graph_list[idx]) 
         else:
             raise ValueError(f"Unknown split: {self.split}")
     
@@ -201,23 +203,54 @@ class GraphDataset(Dataset):
    
     def get_graph_list(self, data_df):
 
+        if data_df is None:
+            return []  
+
         complex_path_list = []
         complex_id_list = []
         pKa_list = []
         graph_path_list = []
-        dis_thresholds = repeat(self.dis_threshold, len(data_df))
+        
 
         for i, row in data_df.iterrows():
             name = f'{row["protein"]}_{row["drug"]}'
             kd = row['y']
             complex_dir = os.path.join(self.data_dir, name)
-            graph_path = os.path.join(complex_dir, f"{self.graph_type}-{name}_{self.dis_threshold}A.pyg")
-            complex_path = os.path.join(complex_dir, f"{name}_{self.dis_threshold}A.rdkit")
 
-            complex_path_list.append(complex_path)
-            complex_id_list.append(name)
-            pKa_list.append(kd)
-            graph_path_list.append(graph_path)
+            if self.top_n > 1 and not self.protein_rank:
+                for i in range(self.top_n):
+                    complex_path = os.path.join(complex_dir, f"{name}_{self.dis_threshold}A_{i+1}.rdkit")
+                    graph_path = os.path.join(complex_dir, f"{self.graph_type}-{name}_{self.dis_threshold}A_{i+1}.pyg")
+                    complex_path_list.append(complex_path)
+                    complex_id_list.append(name)
+                    pKa_list.append(kd)
+                    graph_path_list.append(graph_path)
+            
+            elif self.top_n > 1 and self.protein_rank:
+                for rank in self.protein_rank:
+                    if rank == 1: 
+                        complex_dir = os.path.join(self.data_dir, name)
+                    else:
+                        complex_dir = os.path.join(self.data_dir.replace('colabfold', f'colabfold_rank{rank}'), f'{name}')
+                    
+                    for i in range(self.top_n):
+                        complex_path = os.path.join(complex_dir, f"{name}_{self.dis_threshold}A_{i+1}.rdkit")
+                        graph_path = os.path.join(complex_dir, f"{self.graph_type}-{name}_{self.dis_threshold}A_{i+1}.pyg")
+                        complex_path_list.append(complex_path)
+                        complex_id_list.append(name)
+                        pKa_list.append(kd)
+                        graph_path_list.append(graph_path)
+            
+            else:
+                graph_path = os.path.join(complex_dir, f"{self.graph_type}-{name}_{self.dis_threshold}A.pyg")
+                complex_path = os.path.join(complex_dir, f"{name}_{self.dis_threshold}A.rdkit")
+
+                complex_path_list.append(complex_path)
+                complex_id_list.append(name)
+                pKa_list.append(kd)
+                graph_path_list.append(graph_path)
+
+        dis_thresholds = repeat(self.dis_threshold, len(graph_path_list))
 
         if self.create:
             print('Generate complex graph...')
@@ -228,7 +261,42 @@ class GraphDataset(Dataset):
             pool.close()
             pool.join()
 
-        return [graph_path for graph_path in graph_path_list if os.path.exists(graph_path)]
+
+        if self.top_n > 1 and not self.protein_rank:
+            all_pose_graph = []
+            for i, row in data_df.iterrows():
+                pose_graph = []
+                name = f'{row["protein"]}_{row["drug"]}'
+                complex_dir = os.path.join(self.data_dir, name)
+                for i in range(self.top_n):
+                    if os.path.exists(os.path.join(complex_dir, f"{self.graph_type}-{name}_{self.dis_threshold}A_{i+1}.pyg")):
+                        pose_graph.append(os.path.join(complex_dir, f"{self.graph_type}-{name}_{self.dis_threshold}A_{i+1}.pyg"))
+                all_pose_graph.extend(pose_graph)
+
+            return all_pose_graph
+        
+        elif self.top_n > 1 and self.protein_rank:
+            all_pose_graph = []
+            for i, row in data_df.iterrows():
+                pose_graph = []
+                name = f'{row["protein"]}_{row["drug"]}'
+            
+                for rank in self.protein_rank:
+                    if rank == 1: 
+                        complex_dir = os.path.join(self.data_dir, name)
+                    else:
+                        complex_dir = os.path.join(self.data_dir.replace('colabfold', f'colabfold_rank{rank}'), f'{name}')
+                    
+                    for i in range(self.top_n):
+                        if os.path.exists(os.path.join(complex_dir, f"{self.graph_type}-{name}_{self.dis_threshold}A_{i+1}.pyg")):
+                            pose_graph.append(os.path.join(complex_dir, f"{self.graph_type}-{name}_{self.dis_threshold}A_{i+1}.pyg"))
+                    
+                all_pose_graph.extend(pose_graph)
+
+            return [graph_path for graph_path in all_pose_graph if os.path.exists(graph_path)]
+
+        else:
+           return [graph_path for graph_path in graph_path_list if os.path.exists(graph_path)]
 
 
     def collate_fn(self, batch):
@@ -250,59 +318,21 @@ if __name__ == '__main__':
     parser.add_argument('--data_df', type=str, default='data/benchmark/davis_data.tsv', help='data of protein and ligand')
     parser.add_argument('--complex_path', type=str, default='data/benchmark/davis_complex_colabfold_diffdock', help='the path of the complexes')
     parser.add_argument('--mmseqs_seq_clus_df', type=str, default='data/benchmark/davis_cluster_id50_cluster.tsv', help='the path of mmseqs seq clus')
+    parser.add_argument('--top_n', type=int, default=1, help='preprocess top n ligands')
+    parser.add_argument('--protein_rank', nargs='+', type=int, default=None, help='List of protein rank')
     args = parser.parse_args()
-
 
     data_root = args.complex_path
     data_df = args.data_df
     mmseqs_seq_clus_df= args.mmseqs_seq_clus_df
     data_df = pd.read_csv(data_df, sep='\t')
+    top_n = args.top_n
+    protein_rank = args.protein_rank
     
-    drug_train = GraphDataset(data_root, data_df, split_method='drug', split='train', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    drug_val = GraphDataset(data_root, data_df, split_method='drug', split='val', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    drug_test = GraphDataset(data_root, data_df, split_method='drug', split='test', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    
-    print(f'split_method: drug')
-    print(f"drug_train: {len(drug_train)}")
-    print(f"drug_val: {len(drug_val)}")
-    print(f"drug_test: {len(drug_test)}")
-
-    protein_train = GraphDataset(data_root, data_df, split_method='protein', split='train', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    protein_val = GraphDataset(data_root, data_df, split_method='protein', split='val', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    protein_test = GraphDataset(data_root, data_df, split_method='protein', split='test', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    
-    print(f'split_method: protein')
-    print(f"protein_train: {len(protein_train)}")
-    print(f"protein_val: {len(protein_val)}")
-    print(f"protein_test: {len(protein_test)}")
-
-    both_train = GraphDataset(data_root, data_df, split_method='both', split='train', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    both_val = GraphDataset(data_root, data_df, split_method='both', split='val', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    both_test = GraphDataset(data_root, data_df, split_method='both', split='test', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    
-    print(f'split_method: both')
-    print(f"both_train: {len(both_train)}")
-    print(f"both_val: {len(both_val)}")
-    print(f"both_test: {len(both_test)}")
-
-    seqid_train = GraphDataset(data_root, data_df, split_method='seqid', split='train', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    seqid_val = GraphDataset(data_root, data_df, split_method='seqid', split='val', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    seqid_test = GraphDataset(data_root, data_df, split_method='seqid', split='test', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    
-    print(f'split_method: seqid')
-    print(f"seqid_train: {len(drug_train)}")
-    print(f"seqid_val: {len(drug_val)}")
-    print(f"seqid_test: {len(drug_test)}")
-
-    random_train = GraphDataset(data_root, data_df, split_method='random', split='train', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    random_val = GraphDataset(data_root, data_df, split_method='random', split='val', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-    random_test = GraphDataset(data_root, data_df, split_method='random', split='test', graph_type='Graph_GIGN', dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
-
+    random_train = GraphDataset(data_root, data_df, split_method='random', split='train', graph_type='Graph_GIGN', top_n=top_n, protein_rank=protein_rank, dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    random_val = GraphDataset(data_root, data_df, split_method='random', split='val', graph_type='Graph_GIGN', top_n=top_n, protein_rank=protein_rank, dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)
+    random_test = GraphDataset(data_root, data_df, split_method='random', split='test', graph_type='Graph_GIGN', top_n=top_n, protein_rank=protein_rank, dis_threshold=5, mmseqs_seq_clus_df=mmseqs_seq_clus_df, create=True)    
     print(f'split_method: random')
     print(f"random_train: {len(random_train)}")
     print(f"random_val: {len(random_val)}")
     print(f"random_test: {len(random_test)}")
-    
-    
-
-# %%

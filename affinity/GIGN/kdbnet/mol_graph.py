@@ -3,8 +3,8 @@ from tqdm import tqdm
 import torch
 import numpy as np
 import pandas as pd
-import torch_geometric
-import torch_cluster
+# import torch_geometric
+# import torch_cluster
 
 from kdbnet.constants import ATOM_VOCAB
 from kdbnet.pdb_graph import _rbf, _normalize

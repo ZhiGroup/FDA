@@ -9,8 +9,8 @@ import scipy as sp
 from tqdm import tqdm
 import torch
 import torch.nn.functional as F
-import torch_geometric
-import torch_cluster
+# import torch_geometric
+# import torch_cluster
 from kdbnet.constants import LETTER_TO_NUM
 
 
